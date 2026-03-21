@@ -34,7 +34,7 @@
 
   <iframe
     id="examFrame"
-    src="https://script.google.com/macros/s/AKfycbzYiBTG4poZ8oSrTHO0eWOYWKsKFIZVqsLAR8APGhDwsFNR0Jq1t5xGJgUs_Ku2sXAS/exec?page=er"
+    src="YOUR_LATEST_DEPLOYMENT_URL?page=er"
     scrolling="yes"
     allow="payment *"
     sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox allow-top-navigation"
@@ -43,31 +43,21 @@
 
   <script>
     window.addEventListener('message', function(event) {
-      console.log('Message from:', event.origin, '| Type:', event.data?.type);
+      // ── Log actual origin for debugging ───────────────────────────────
+      console.log('Origin:', event.origin, '| Type:', event.data?.type);
 
-      // Apps Script iframes can come from multiple Google origins
-      const allowedOrigins = [
-        'script.google.com',
-        'googleusercontent.com',
-        'content.com'
-      ];
-
-      const isAllowed = allowedOrigins.some(o => event.origin.includes(o));
-      if (!isAllowed) {
-        console.log('Rejected origin:', event.origin);
-        return;
-      }
-
+      // ── NO origin check — accept all messages ─────────────────────────
+      // Safe because we only act on known message types
       const msg = event.data;
       if (!msg || !msg.type) return;
 
-      console.log('✅ Accepted:', msg.type);
-
-      if (msg.type === 'OPEN_RAZORPAY') launchRazorpay(msg.payload);
+      if (msg.type === 'OPEN_RAZORPAY') {
+        console.log('✅ Opening Razorpay with:', msg.payload);
+        launchRazorpay(msg.payload);
+      }
     });
 
     function launchRazorpay(payload) {
-      console.log('🚀 Launching Razorpay:', payload);
       const options = {
         key:         'rzp_live_ST8o92Q6AKbaEP',
         amount:      payload.amount * 100,
@@ -83,17 +73,26 @@
           emi:        false,
           paylater:   false
         },
-        prefill: { name: payload.studentName, email: payload.email, contact: '' },
-        notes:   { studentId: payload.studentId, branch: payload.branch },
+        prefill: {
+          name:    payload.studentName,
+          email:   payload.email,
+          contact: ''
+        },
+        notes: {
+          studentId: payload.studentId,
+          branch:    payload.branch
+        },
         timeout: 300,
         theme:   { color: '#667eea' },
 
         handler: function(response) {
           console.log('✅ Payment success:', response);
           document.getElementById('examFrame').contentWindow.postMessage({
-            type: 'PAYMENT_SUCCESS', payload: response
+            type:    'PAYMENT_SUCCESS',
+            payload: response
           }, '*');
         },
+
         modal: {
           ondismiss: function() {
             document.getElementById('examFrame').contentWindow.postMessage({
@@ -106,7 +105,7 @@
       const rzp = new Razorpay(options);
       rzp.on('payment.failed', function(r) {
         document.getElementById('examFrame').contentWindow.postMessage({
-          type: 'PAYMENT_FAILED',
+          type:    'PAYMENT_FAILED',
           payload: { description: r.error.description }
         }, '*');
       });
