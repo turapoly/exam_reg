@@ -152,33 +152,31 @@
           };
 
           // ── GET request — no preflight needed, works with no-cors ────────
-          fetch(APPS_SCRIPT_URL + '?action=submitreg', {
-            method:  'POST',
-            mode:    'no-cors',
-            headers: { 'Content-Type': 'text/plain' },  // ← text/plain = no preflight ✅
-            body:    JSON.stringify(submitPayload)
-            })
-            .then(() => {
-              hideProcessing();
-              showSuccessPage({
-                registrationId: registrationId,
-                paymentId:      response.razorpay_payment_id,
-                email:          formData.email,
-                studentId:      formData.studentId,
-                studentName:    formData.studentName,
-                branch:         formData.branch,
-                semester:       formData.semester,
-                examStatus:     formData.examStatus,
-                subjects:       formData.subjects,
-                amount:         formData.amount,
-                receiptNo:      formData.receiptNo
-              });
-            })
-            .catch(err => {
-              console.error('Submit error:', err);
-              hideProcessing();
-              showErrorPage(response.razorpay_payment_id);
-            });
+const beaconUrl  = APPS_SCRIPT_URL + '?action=submitreg';
+const beaconData = new Blob(
+  [JSON.stringify(submitPayload)],
+  { type: 'text/plain' }
+);
+
+const sent = navigator.sendBeacon(beaconUrl, beaconData);
+console.log('Beacon sent:', sent);
+
+// sendBeacon returns true if queued successfully
+// Show success page immediately — Apps Script saves in background
+hideProcessing();
+showSuccessPage({
+  registrationId: registrationId,
+  paymentId:      response.razorpay_payment_id,
+  email:          formData.email,
+  studentId:      formData.studentId,
+  studentName:    formData.studentName,
+  branch:         formData.branch,
+  semester:       formData.semester,
+  examStatus:     formData.examStatus,
+  subjects:       formData.subjects,
+  amount:         formData.amount,
+  receiptNo:      formData.receiptNo
+});
         },
 
         modal: {
