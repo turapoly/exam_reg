@@ -24,39 +24,82 @@
     #loadingScreen p { font-family: 'Segoe UI', sans-serif; font-size: 15px; opacity: 0.9; }
     @keyframes spin { to { transform: rotate(360deg); } }
     iframe { width: 100%; height: 100vh; border: none; display: block; }
+
+    /* Processing overlay */
+    #processingOverlay {
+      display: none;
+      position: fixed; inset: 0; z-index: 9999;
+      background: rgba(0,0,0,0.7);
+      justify-content: center; align-items: center;
+      flex-direction: column; color: white;
+      font-family: 'Segoe UI', sans-serif;
+    }
+    #processingOverlay.show { display: flex; }
+    #processingOverlay .spinner {
+      width: 56px; height: 56px;
+      border: 6px solid rgba(255,255,255,0.3);
+      border-top-color: white; border-radius: 50%;
+      animation: spin 0.9s linear infinite; margin-bottom: 20px;
+    }
+    #processingOverlay p { font-size: 18px; font-weight: 600; }
+    #processingOverlay small { font-size: 13px; opacity: 0.8; margin-top: 8px; }
   </style>
 </head>
 <body>
+
+  <!-- Loading screen -->
   <div id="loadingScreen">
     <div class="spinner"></div>
     <p>Loading Exam Registration...</p>
   </div>
 
+  <!-- Processing overlay (shown after payment) -->
+  <div id="processingOverlay">
+    <div class="spinner"></div>
+    <p id="processingMsg">Verifying payment…</p>
+    <small>Please do not close this window</small>
+  </div>
+
+  <!-- Exam form iframe -->
   <iframe
     id="examFrame"
-    src="https://script.google.com/macros/s/AKfycbwEkMvs6tXSJnrXdjdxJm6yX7Gz82pUL0Zop2MPUROU-eBMoLzfpYXTjzQbx_GzJQwV/exec?page=er"
+    src="https://script.google.com/macros/s/AKfycbxzmHk53G7lkOzps1Pmsd7fGTkHgsYoe-COL2mO6wjLwP7wiOPg-GlRV2XkqWX27PDc/exec?page=er"
     scrolling="yes"
     allow="payment *"
-    
     onload="document.getElementById('loadingScreen').style.display='none'">
   </iframe>
 
   <script>
+    // ── Store form data received from iframe ───────────────────────────────
+    let formData = null;
+
+    // ── Apps Script Web App URL ────────────────────────────────────────────
+    const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxzmHk53G7lkOzps1Pmsd7fGTkHgsYoe-COL2mO6wjLwP7wiOPg-GlRV2XkqWX27PDc/exec?page=er';
+
+    function showProcessing(msg) {
+      document.getElementById('processingMsg').textContent = msg;
+      document.getElementById('processingOverlay').classList.add('show');
+    }
+
+    function hideProcessing() {
+      document.getElementById('processingOverlay').classList.remove('show');
+    }
+
+    // ── Listen for messages from iframe ────────────────────────────────────
     window.addEventListener('message', function(event) {
-      // ── Log actual origin for debugging ───────────────────────────────
       console.log('Origin:', event.origin, '| Type:', event.data?.type);
 
-      // ── NO origin check — accept all messages ─────────────────────────
-      // Safe because we only act on known message types
       const msg = event.data;
       if (!msg || !msg.type) return;
 
       if (msg.type === 'OPEN_RAZORPAY') {
-        console.log('✅ Opening Razorpay with:', msg.payload);
+        formData = msg.payload; // ← Store ALL form data
+        console.log('✅ Stored form data, launching Razorpay');
         launchRazorpay(msg.payload);
       }
     });
 
+    // ── Launch Razorpay ────────────────────────────────────────────────────
     function launchRazorpay(payload) {
       const options = {
         key:         'rzp_live_ST8o92Q6AKbaEP',
@@ -65,51 +108,111 @@
         name:        'Tura Polytechnic',
         description: 'Semester Exam Fee',
         order_id:    payload.orderId,
-        method: {
-          upi:        true,
-          card:       false,
-          netbanking: false,
-          wallet:     false,
-          emi:        false,
-          paylater:   false
-        },
-        prefill: {
-          name:    payload.studentName,
-          email:   payload.email,
-          contact: ''
-        },
-        notes: {
-          studentId: payload.studentId,
-          branch:    payload.branch
-        },
+        method: { upi: true, card: false, netbanking: false, wallet: false, emi: false, paylater: false },
+        prefill: { name: payload.studentName, email: payload.email, contact: '' },
+        notes:   { studentId: payload.studentId, branch: payload.branch },
         timeout: 300,
         theme:   { color: '#667eea' },
 
+        // ── Payment SUCCESS — handle everything from parent ────────────────
         handler: function(response) {
           console.log('✅ Payment success:', response);
-          document.getElementById('examFrame').contentWindow.postMessage({
-            type:    'PAYMENT_SUCCESS',
-            payload: response
-          }, '*');
+          showProcessing('Verifying payment…');
+
+          // Step 1 — Verify payment via Apps Script
+          fetch(APPS_SCRIPT_URL + '?action=verify' +
+            '&orderId='    + encodeURIComponent(response.razorpay_order_id) +
+            '&paymentId='  + encodeURIComponent(response.razorpay_payment_id) +
+            '&signature='  + encodeURIComponent(response.razorpay_signature))
+          .then(r => r.json())
+          .then(verifyRes => {
+            if (!verifyRes.success) {
+              hideProcessing();
+              notifyIframe('REGISTRATION_FAILED', {
+                message: 'Payment verification failed. ID: ' + response.razorpay_payment_id
+              });
+              return;
+            }
+
+            showProcessing('Submitting registration…');
+
+            // Step 2 — Submit registration via Apps Script
+            fetch(APPS_SCRIPT_URL + '?action=submit', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+              body: 'data=' + encodeURIComponent(JSON.stringify({
+                studentId:   formData.studentId,
+                studentName: formData.studentName,
+                email:       formData.email,
+                branch:      formData.branch,
+                semester:    formData.semester,
+                examStatus:  formData.examStatus,
+                subjects:    formData.subjects,
+                amount:      formData.amount,
+                examFeeOnly: formData.examFeeOnly,
+                ncFee:       formData.ncFeeTotal,
+                ncSubjects:  formData.ncCount,
+                paymentId:   response.razorpay_payment_id,
+                paymentMethod: 'Razorpay UPI',
+                receiptNo:   formData.receiptNo
+              }))
+            })
+            .then(r => r.json())
+            .then(submitRes => {
+              hideProcessing();
+              if (submitRes.success) {
+                const pdfData = {
+                  ...formData,
+                  paymentId:      response.razorpay_payment_id,
+                  paymentMethod:  'Razorpay UPI',
+                  registrationId: submitRes.registrationId,
+                  dateTime: new Date().toLocaleString('en-IN', {
+                    dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Kolkata'
+                  })
+                };
+                notifyIframe('REGISTRATION_COMPLETE', {
+                  registrationId: submitRes.registrationId,
+                  email:          formData.email,
+                  pdfData:        pdfData
+                });
+              } else {
+                notifyIframe('REGISTRATION_FAILED', { message: submitRes.message });
+              }
+            })
+            .catch(err => {
+              hideProcessing();
+              notifyIframe('REGISTRATION_FAILED', { message: 'Submit error: ' + err.message });
+            });
+          })
+          .catch(err => {
+            hideProcessing();
+            notifyIframe('REGISTRATION_FAILED', { message: 'Verify error: ' + err.message });
+          });
         },
 
         modal: {
           ondismiss: function() {
-            document.getElementById('examFrame').contentWindow.postMessage({
-              type: 'PAYMENT_CANCELLED'
-            }, '*');
+            notifyIframe('PAYMENT_CANCELLED', {});
           }
         }
       };
 
       const rzp = new Razorpay(options);
       rzp.on('payment.failed', function(r) {
-        document.getElementById('examFrame').contentWindow.postMessage({
-          type:    'PAYMENT_FAILED',
-          payload: { description: r.error.description }
-        }, '*');
+        notifyIframe('PAYMENT_FAILED', { description: r.error.description });
       });
       rzp.open();
+    }
+
+    // ── Send message back to iframe ────────────────────────────────────────
+    function notifyIframe(type, payload) {
+      const iframe = document.getElementById('examFrame');
+      // Try both postMessage methods
+      try {
+        iframe.contentWindow.postMessage({ type, payload }, '*');
+      } catch(e) {
+        console.log('postMessage failed:', e);
+      }
     }
   </script>
 </body>
