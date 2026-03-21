@@ -34,20 +34,25 @@
 
   <iframe
     id="examFrame"
-    src="https://script.google.com/macros/s/AKfycbzYiBTG4poZ8oSrTHO0eWOYWKsKFIZVqsLAR8APGhDwsFNR0Jq1t5xGJgUs_Ku2sXAS/exec?page=er"
+    src="https://script.google.com/macros/s/AKfycby6PlgQo0jlq_3UdMKg6WIw1JxlQuQDCqsqoPkkvmhTKrU1lW__kRhgZEU121ZiHfWM/exec?page=er"
     scrolling="yes"
-    allow="payment *; camera *; microphone *"
+    allow="payment *"
+    sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox allow-top-navigation"
     onload="document.getElementById('loadingScreen').style.display='none'">
   </iframe>
 
   <script>
+    // ── Debug: log all messages ────────────────────────────────────────────
     window.addEventListener('message', function(event) {
+      console.log('Message from:', event.origin, '| Type:', event.data?.type);
+
       if (!event.origin.includes('script.google.com')) return;
       const msg = event.data;
       if (msg.type === 'OPEN_RAZORPAY') launchRazorpay(msg.payload);
     });
 
     function launchRazorpay(payload) {
+      console.log('launchRazorpay called with:', payload); // ← debug
       const options = {
         key:         'rzp_live_ST8o92Q6AKbaEP',
         amount:      payload.amount * 100,
@@ -55,13 +60,21 @@
         name:        'Tura Polytechnic',
         description: 'Semester Exam Fee',
         order_id:    payload.orderId,
-        method: { upi: true, card: false, netbanking: false, wallet: false, emi: false, paylater: false },
+        method: {
+          upi:        true,
+          card:       false,
+          netbanking: false,
+          wallet:     false,
+          emi:        false,
+          paylater:   false
+        },
         prefill: { name: payload.studentName, email: payload.email, contact: '' },
         notes:   { studentId: payload.studentId, branch: payload.branch },
         timeout: 300,
         theme:   { color: '#667eea' },
 
         handler: function(response) {
+          console.log('Payment success:', response); // ← debug
           document.getElementById('examFrame').contentWindow.postMessage({
             type: 'PAYMENT_SUCCESS', payload: response
           }, '*');
@@ -74,6 +87,7 @@
           }
         }
       };
+
       const rzp = new Razorpay(options);
       rzp.on('payment.failed', function(r) {
         document.getElementById('examFrame').contentWindow.postMessage({
@@ -86,3 +100,7 @@
   </script>
 </body>
 </html>
+
+
+
+
