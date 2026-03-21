@@ -69,7 +69,7 @@
 
   <iframe
     id="examFrame"
-    src="https://script.google.com/macros/s/AKfycbycV63zBWxeN7GHZXxlDfOSB5elJKN_LRhWGVonfP9s5pY3pqoag6WIbD-ozuJaiAw1/exec?page=er"
+    src="https://script.google.com/macros/s/AKfycbz3FWRzsmRuFSy2PMDXgIeng1YMi9krHJyROwmsgbN2sI1PrZqrSqay6Ym6FEoK4rJW/exec?page=er"
     scrolling="yes"
     allow="payment *"
     onload="document.getElementById('loadingScreen').style.display='none'">
@@ -81,7 +81,7 @@
     let formData = null;
 
     // ── Apps Script URL — no ?page=er here, actions added dynamically ─────
-    const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbycV63zBWxeN7GHZXxlDfOSB5elJKN_LRhWGVonfP9s5pY3pqoag6WIbD-ozuJaiAw1/exec?page=er';
+    const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbz3FWRzsmRuFSy2PMDXgIeng1YMi9krHJyROwmsgbN2sI1PrZqrSqay6Ym6FEoK4rJW/exec?page=er';
 
     function showProcessing(msg) {
       document.getElementById('processingMsg').textContent = msg;
@@ -152,11 +152,12 @@
           };
 
           // ── GET request — no preflight needed, works with no-cors ────────
-          const submitUrl = APPS_SCRIPT_URL +
-            '?action=submitreg&data=' +
-            encodeURIComponent(JSON.stringify(submitPayload));
-
-          fetch(submitUrl, { method: 'GET', mode: 'no-cors' })
+          fetch(APPS_SCRIPT_URL + '?action=submitreg', {
+            method:  'POST',
+            mode:    'no-cors',
+            headers: { 'Content-Type': 'text/plain' },  // ← text/plain = no preflight ✅
+            body:    JSON.stringify(submitPayload)
+            })
             .then(() => {
               hideProcessing();
               showSuccessPage({
