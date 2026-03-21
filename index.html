@@ -7,13 +7,10 @@
   <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-
     body {
       background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
       min-height: 100vh;
     }
-
-    /* Loading screen */
     #loadingScreen {
       position: fixed; inset: 0;
       background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -28,13 +25,8 @@
       animation: spin 0.9s linear infinite;
       margin-bottom: 16px;
     }
-    #loadingScreen p {
-      font-family: 'Segoe UI', sans-serif;
-      font-size: 15px; opacity: 0.9;
-    }
+    #loadingScreen p { font-family: 'Segoe UI', sans-serif; font-size: 15px; opacity: 0.9; }
     @keyframes spin { to { transform: rotate(360deg); } }
-
-    /* Processing overlay */
     #processingOverlay {
       display: none;
       position: fixed; inset: 0; z-index: 9999;
@@ -53,14 +45,7 @@
     }
     #processingOverlay p     { font-size: 18px; font-weight: 600; }
     #processingOverlay small { font-size: 13px; opacity: 0.8; margin-top: 8px; }
-
-    /* iframe */
-    iframe {
-      width: 100%; height: 100vh;
-      border: none; display: block;
-    }
-
-    /* Success page */
+    iframe { width: 100%; height: 100vh; border: none; display: block; }
     #successPage {
       display: none;
       background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -71,36 +56,33 @@
 </head>
 <body>
 
-  <!-- Loading screen while iframe loads -->
   <div id="loadingScreen">
     <div class="spinner"></div>
     <p>Loading Exam Registration...</p>
   </div>
 
-  <!-- Processing overlay — shown during payment submission -->
   <div id="processingOverlay">
     <div class="spinner"></div>
     <p id="processingMsg">Processing payment…</p>
     <small>Please do not close this window</small>
   </div>
 
-  <!-- Exam registration form in iframe -->
   <iframe
     id="examFrame"
-    src="https://script.google.com/macros/s/AKfycbyk6GhIErNVFPn0GMdugf-T-BNB2bPXIIt8QRd6PVPT9A9eovAaXF_4BYFKy9RfG1Wl/exec?page=er"
+    src="https://script.google.com/macros/s/AKfycbzPfU_4e0TQPv7kiiT-Kio58SKm6_R9OiqvH6X7h97ZIvAKVmct6OmmHp5gAoSwDlLX/exec?page=er"
     scrolling="yes"
     allow="payment *"
     onload="document.getElementById('loadingScreen').style.display='none'">
   </iframe>
 
-  <!-- Success / Error page — shown after registration -->
   <div id="successPage"></div>
 
   <script>
     let formData = null;
-    const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyk6GhIErNVFPn0GMdugf-T-BNB2bPXIIt8QRd6PVPT9A9eovAaXF_4BYFKy9RfG1Wl/exec?page=er';
 
-    // ── Overlay helpers ────────────────────────────────────────────────────
+    // ── Apps Script URL — no ?page=er here, actions added dynamically ─────
+    const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzPfU_4e0TQPv7kiiT-Kio58SKm6_R9OiqvH6X7h97ZIvAKVmct6OmmHp5gAoSwDlLX/exec?page=er';
+
     function showProcessing(msg) {
       document.getElementById('processingMsg').textContent = msg;
       document.getElementById('processingOverlay').classList.add('show');
@@ -110,12 +92,11 @@
       document.getElementById('processingOverlay').classList.remove('show');
     }
 
-    // ── Listen for OPEN_RAZORPAY message from iframe ───────────────────────
+    // ── Listen for OPEN_RAZORPAY from iframe ──────────────────────────────
     window.addEventListener('message', function(event) {
       console.log('Origin:', event.origin, '| Type:', event.data?.type);
       const msg = event.data;
       if (!msg || !msg.type) return;
-
       if (msg.type === 'OPEN_RAZORPAY') {
         formData = msg.payload;
         console.log('✅ Stored form data, launching Razorpay');
@@ -123,7 +104,7 @@
       }
     });
 
-    // ── Launch Razorpay checkout ───────────────────────────────────────────
+    // ── Launch Razorpay ───────────────────────────────────────────────────
     function launchRazorpay(payload) {
       const options = {
         key:         'rzp_live_ST8o92Q6AKbaEP',
@@ -132,7 +113,6 @@
         name:        'Tura Polytechnic',
         description: 'Semester Exam Fee',
         order_id:    payload.orderId,
-
         method: {
           upi:        true,
           card:       false,
@@ -141,22 +121,12 @@
           emi:        false,
           paylater:   false
         },
-
-        prefill: {
-          name:    payload.studentName,
-          email:   payload.email,
-          contact: ''
-        },
-
-        notes: {
-          studentId: payload.studentId,
-          branch:    payload.branch
-        },
-
+        prefill: { name: payload.studentName, email: payload.email, contact: '' },
+        notes:   { studentId: payload.studentId, branch: payload.branch },
         timeout: 300,
         theme:   { color: '#667eea' },
 
-        // ── Payment SUCCESS ────────────────────────────────────────────────
+        // ── Payment SUCCESS ───────────────────────────────────────────────
         handler: function(response) {
           console.log('✅ Payment success:', response);
           showProcessing('Submitting registration…');
@@ -181,34 +151,33 @@
             registrationId: registrationId
           };
 
-          // ── Submit via no-cors — bypasses CORS, sheet still gets saved ──
-          fetch(APPS_SCRIPT_URL + '?action=submit', {
-            method:  'POST',
-            mode:    'no-cors',
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-            body:    'data=' + encodeURIComponent(JSON.stringify(submitPayload))
-          })
-          .then(() => {
-            hideProcessing();
-            showSuccessPage({
-              registrationId: registrationId,
-              paymentId:      response.razorpay_payment_id,
-              email:          formData.email,
-              studentId:      formData.studentId,
-              studentName:    formData.studentName,
-              branch:         formData.branch,
-              semester:       formData.semester,
-              examStatus:     formData.examStatus,
-              subjects:       formData.subjects,
-              amount:         formData.amount,
-              receiptNo:      formData.receiptNo
+          // ── GET request — no preflight needed, works with no-cors ────────
+          const submitUrl = APPS_SCRIPT_URL +
+            '?action=submitreg&data=' +
+            encodeURIComponent(JSON.stringify(submitPayload));
+
+          fetch(submitUrl, { method: 'GET', mode: 'no-cors' })
+            .then(() => {
+              hideProcessing();
+              showSuccessPage({
+                registrationId: registrationId,
+                paymentId:      response.razorpay_payment_id,
+                email:          formData.email,
+                studentId:      formData.studentId,
+                studentName:    formData.studentName,
+                branch:         formData.branch,
+                semester:       formData.semester,
+                examStatus:     formData.examStatus,
+                subjects:       formData.subjects,
+                amount:         formData.amount,
+                receiptNo:      formData.receiptNo
+              });
+            })
+            .catch(err => {
+              console.error('Submit error:', err);
+              hideProcessing();
+              showErrorPage(response.razorpay_payment_id);
             });
-          })
-          .catch(err => {
-            console.error('Submit error:', err);
-            hideProcessing();
-            showErrorPage(response.razorpay_payment_id);
-          });
         },
 
         modal: {
@@ -225,7 +194,7 @@
       rzp.open();
     }
 
-    // ── Show success page on parent ────────────────────────────────────────
+    // ── Success page ──────────────────────────────────────────────────────
     function showSuccessPage(data) {
       const now = new Date().toLocaleString('en-IN', {
         dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Kolkata'
@@ -240,88 +209,58 @@
                      text-align:center;">${s.status}</td>
         </tr>`).join('');
 
-      // Hide iframe, show success
       document.getElementById('examFrame').style.display   = 'none';
       document.getElementById('successPage').style.display = 'block';
 
       document.getElementById('successPage').innerHTML = `
         <div style="max-width:680px;margin:0 auto;padding:20px 0;">
-
-          <!-- Card -->
           <div style="background:white;border-radius:16px;
                       box-shadow:0 10px 40px rgba(0,0,0,0.2);
                       overflow:hidden;font-family:'Segoe UI',sans-serif;">
 
-            <!-- Header -->
             <div style="background:#1e3a5f;padding:30px;text-align:center;">
               <div style="font-size:52px;">✅</div>
-              <h2 style="color:white;margin:12px 0 4px;font-size:22px;">
-                Registration Successful!
-              </h2>
-              <p style="color:#c8d8f0;font-size:13px;">
-                Payment confirmed and registration saved
-              </p>
+              <h2 style="color:white;margin:12px 0 4px;font-size:22px;">Registration Successful!</h2>
+              <p style="color:#c8d8f0;font-size:13px;">Payment confirmed and registration saved</p>
             </div>
 
-            <!-- Registration ID -->
             <div style="background:#e8f5e9;padding:18px;text-align:center;
                         border-bottom:2px solid #c8e6c9;">
-              <p style="color:#2e7d32;font-size:12px;
-                        text-transform:uppercase;letter-spacing:.05em;
-                        margin-bottom:6px;">Registration ID</p>
+              <p style="color:#2e7d32;font-size:12px;text-transform:uppercase;
+                        letter-spacing:.05em;margin-bottom:6px;">Registration ID</p>
               <p style="color:#1565c0;font-size:24px;font-weight:bold;
                         letter-spacing:1px;">${data.registrationId}</p>
             </div>
 
-            <!-- Details body -->
             <div style="padding:26px;">
-
-              <!-- Student & Payment details -->
-              <table style="width:100%;font-size:13px;
-                            border-collapse:collapse;margin-bottom:22px;">
+              <table style="width:100%;font-size:13px;border-collapse:collapse;margin-bottom:22px;">
                 <tr style="background:#f5f7fb;">
-                  <td style="padding:8px 10px;color:#777;width:145px;
-                             border-bottom:1px solid #eee;">Student ID</td>
-                  <td style="padding:8px 10px;font-weight:600;
-                             border-bottom:1px solid #eee;">${data.studentId}</td>
+                  <td style="padding:8px 10px;color:#777;width:145px;border-bottom:1px solid #eee;">Student ID</td>
+                  <td style="padding:8px 10px;font-weight:600;border-bottom:1px solid #eee;">${data.studentId}</td>
                 </tr>
                 <tr>
-                  <td style="padding:8px 10px;color:#777;
-                             border-bottom:1px solid #eee;">Student Name</td>
-                  <td style="padding:8px 10px;font-weight:600;
-                             border-bottom:1px solid #eee;">${data.studentName}</td>
+                  <td style="padding:8px 10px;color:#777;border-bottom:1px solid #eee;">Student Name</td>
+                  <td style="padding:8px 10px;font-weight:600;border-bottom:1px solid #eee;">${data.studentName}</td>
                 </tr>
                 <tr style="background:#f5f7fb;">
-                  <td style="padding:8px 10px;color:#777;
-                             border-bottom:1px solid #eee;">Branch / Semester</td>
-                  <td style="padding:8px 10px;
-                             border-bottom:1px solid #eee;">
-                    ${data.branch} / Semester ${data.semester}
-                  </td>
+                  <td style="padding:8px 10px;color:#777;border-bottom:1px solid #eee;">Branch / Semester</td>
+                  <td style="padding:8px 10px;border-bottom:1px solid #eee;">${data.branch} / Semester ${data.semester}</td>
                 </tr>
                 <tr>
-                  <td style="padding:8px 10px;color:#777;
-                             border-bottom:1px solid #eee;">Exam Status</td>
-                  <td style="padding:8px 10px;
-                             border-bottom:1px solid #eee;">${data.examStatus}</td>
+                  <td style="padding:8px 10px;color:#777;border-bottom:1px solid #eee;">Exam Status</td>
+                  <td style="padding:8px 10px;border-bottom:1px solid #eee;">${data.examStatus}</td>
                 </tr>
                 <tr style="background:#f5f7fb;">
-                  <td style="padding:8px 10px;color:#777;
-                             border-bottom:1px solid #eee;">Amount Paid</td>
-                  <td style="padding:8px 10px;color:#e65100;font-weight:700;
-                             border-bottom:1px solid #eee;">₹${data.amount}</td>
+                  <td style="padding:8px 10px;color:#777;border-bottom:1px solid #eee;">Amount Paid</td>
+                  <td style="padding:8px 10px;color:#e65100;font-weight:700;border-bottom:1px solid #eee;">₹${data.amount}</td>
                 </tr>
                 <tr>
-                  <td style="padding:8px 10px;color:#777;
-                             border-bottom:1px solid #eee;">Payment ID</td>
-                  <td style="padding:8px 10px;font-size:12px;
-                             border-bottom:1px solid #eee;">${data.paymentId}</td>
+                  <td style="padding:8px 10px;color:#777;border-bottom:1px solid #eee;">Payment ID</td>
+                  <td style="padding:8px 10px;font-size:12px;border-bottom:1px solid #eee;">${data.paymentId}</td>
                 </tr>
                 <tr style="background:#f5f7fb;">
-                  <td style="padding:8px 10px;color:#777;
-                             border-bottom:1px solid #eee;">Receipt No</td>
-                  <td style="padding:8px 10px;
-                             border-bottom:1px solid #eee;">${data.receiptNo}</td>
+                  <td style="padding:8px 10px;color:#777;border-bottom:1px solid #eee;">Receipt No</td>
+                  <td style="padding:8px 10px;border-bottom:1px solid #eee;">${data.receiptNo}</td>
                 </tr>
                 <tr>
                   <td style="padding:8px 10px;color:#777;">Date & Time</td>
@@ -329,13 +268,10 @@
                 </tr>
               </table>
 
-              <!-- Registered subjects -->
-              <p style="font-weight:700;color:#1e3a5f;
-                        font-size:14px;margin-bottom:10px;">
+              <p style="font-weight:700;color:#1e3a5f;font-size:14px;margin-bottom:10px;">
                 Registered Subjects
               </p>
-              <table style="width:100%;font-size:12px;
-                            border-collapse:collapse;margin-bottom:22px;">
+              <table style="width:100%;font-size:12px;border-collapse:collapse;margin-bottom:22px;">
                 <thead>
                   <tr style="background:#1e3a5f;color:white;">
                     <th style="padding:9px 10px;text-align:left;">Code</th>
@@ -346,30 +282,24 @@
                 <tbody>${subjectRows}</tbody>
               </table>
 
-              <!-- Email notice -->
-              <div style="background:#e3f2fd;border-radius:8px;
-                          padding:14px 16px;margin-bottom:20px;">
+              <div style="background:#e3f2fd;border-radius:8px;padding:14px 16px;margin-bottom:20px;">
                 <p style="font-size:13px;color:#1565c0;">
-                  📧 A receipt has been sent to
-                  <strong>${data.email}</strong>
+                  📧 A receipt has been sent to <strong>${data.email}</strong>
                 </p>
               </div>
 
-              <!-- Register another button -->
               <button onclick="location.reload()"
-                style="width:100%;padding:15px;background:#1e3a5f;
-                       color:white;border:none;border-radius:10px;
-                       font-size:15px;font-weight:600;cursor:pointer;
-                       transition:background 0.2s;">
+                style="width:100%;padding:15px;background:#1e3a5f;color:white;
+                       border:none;border-radius:10px;font-size:15px;
+                       font-weight:600;cursor:pointer;">
                 🔄 Register Another Student
               </button>
-
             </div>
           </div>
         </div>`;
     }
 
-    // ── Show error page if submission fails ───────────────────────────────
+    // ── Error page ────────────────────────────────────────────────────────
     function showErrorPage(paymentId) {
       document.getElementById('examFrame').style.display   = 'none';
       document.getElementById('successPage').style.display = 'block';
@@ -384,20 +314,15 @@
             Payment Received — Registration Pending
           </h2>
           <p style="color:#555;font-size:14px;line-height:1.7;margin-bottom:16px;">
-            Your payment was successful but registration
-            could not be saved automatically.
+            Your payment was successful but registration could not be saved automatically.
           </p>
           <div style="background:#fff3cd;border:1px solid #ffe082;
                       border-radius:8px;padding:16px;margin-bottom:20px;">
-            <p style="font-size:12px;color:#856404;margin-bottom:6px;">
-              Your Payment ID (save this):
-            </p>
-            <p style="font-size:17px;font-weight:bold;
-                      color:#e65100;word-break:break-all;">${paymentId}</p>
+            <p style="font-size:12px;color:#856404;margin-bottom:6px;">Your Payment ID (save this):</p>
+            <p style="font-size:17px;font-weight:bold;color:#e65100;word-break:break-all;">${paymentId}</p>
           </div>
           <p style="font-size:13px;color:#777;margin-bottom:24px;">
-            Please contact admin with your Payment ID
-            to complete registration manually.
+            Please contact admin with your Payment ID to complete registration manually.
           </p>
           <button onclick="location.reload()"
             style="padding:13px 32px;background:#1e3a5f;color:white;
@@ -410,3 +335,10 @@
   </script>
 </body>
 </html>
+
+
+
+
+
+
+
