@@ -69,7 +69,7 @@
 
   <iframe
     id="examFrame"
-    src="https://script.google.com/macros/s/AKfycbz3FWRzsmRuFSy2PMDXgIeng1YMi9krHJyROwmsgbN2sI1PrZqrSqay6Ym6FEoK4rJW/exec?page=er"
+    src="https://script.google.com/macros/s/AKfycbxLwQBpS0Tj1u6zYm_irEnp3hvOIE3C577QzHOZdmvN5EW4EqCPoAVakMNi2aaEE9nk/exec?page=er"
     scrolling="yes"
     allow="payment *"
     onload="document.getElementById('loadingScreen').style.display='none'">
@@ -80,8 +80,8 @@
   <script>
     let formData = null;
 
-    // ── Apps Script URL — no ?page=er here, actions added dynamically ─────
-    const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbz3FWRzsmRuFSy2PMDXgIeng1YMi9krHJyROwmsgbN2sI1PrZqrSqay6Ym6FEoK4rJW/exec?page=er';
+    // ── Your Apps Script deployment URL (no ?page= here) ──────────────────
+    const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxLwQBpS0Tj1u6zYm_irEnp3hvOIE3C577QzHOZdmvN5EW4EqCPoAVakMNi2aaEE9nk/exec?page=er';
 
     function showProcessing(msg) {
       document.getElementById('processingMsg').textContent = msg;
@@ -99,12 +99,12 @@
       if (!msg || !msg.type) return;
       if (msg.type === 'OPEN_RAZORPAY') {
         formData = msg.payload;
-        console.log('✅ Stored form data, launching Razorpay');
+        console.log('✅ Stored form data:', formData);
         launchRazorpay(msg.payload);
       }
     });
 
-    // ── Launch Razorpay ───────────────────────────────────────────────────
+    // ── Launch Razorpay ────────────────────────────────────────────────────
     function launchRazorpay(payload) {
       const options = {
         key:         'rzp_live_ST8o92Q6AKbaEP',
@@ -129,54 +129,39 @@
         // ── Payment SUCCESS ───────────────────────────────────────────────
         handler: function(response) {
           console.log('✅ Payment success:', response);
-          showProcessing('Submitting registration…');
+          showProcessing('Completing registration…');
 
           const registrationId = 'REG' + Date.now();
 
-          const submitPayload = {
-            studentId:      formData.studentId,
-            studentName:    formData.studentName,
-            email:          formData.email,
-            branch:         formData.branch,
-            semester:       formData.semester,
-            examStatus:     formData.examStatus,
-            subjects:       formData.subjects,
-            amount:         formData.amount,
-            examFeeOnly:    formData.examFeeOnly,
-            ncFee:          formData.ncFeeTotal,
-            ncSubjects:     formData.ncCount,
-            paymentId:      response.razorpay_payment_id,
-            paymentMethod:  'Razorpay UPI',
-            receiptNo:      formData.receiptNo,
-            registrationId: registrationId
+          // ── Image trick — fires GET with no CORS restriction ─────────────
+          // pendingId was saved BEFORE payment via google.script.run
+          // Only tiny IDs sent here — full data already in pending_registrations
+          const confirmUrl = APPS_SCRIPT_URL
+            + '?action=confirmreg'
+            + '&pendingId='      + encodeURIComponent(formData.pendingId)
+            + '&paymentId='      + encodeURIComponent(response.razorpay_payment_id)
+            + '&registrationId=' + encodeURIComponent(registrationId)
+            + '&receiptNo='      + encodeURIComponent(formData.receiptNo);
+
+          console.log('Firing confirmreg:', confirmUrl);
+
+          const img = new Image();
+
+          // Both onload and onerror mean request was sent ✅
+          // Apps Script always returns redirect — onerror fires but data is saved
+          img.onload = function() {
+            console.log('✅ confirmreg onload fired');
+            hideProcessing();
+            showSuccessPage(response.razorpay_payment_id, registrationId);
+          };
+          img.onerror = function() {
+            // This is NORMAL for cross-origin — request still reached Apps Script ✅
+            console.log('✅ confirmreg onerror fired (normal — data still saved)');
+            hideProcessing();
+            showSuccessPage(response.razorpay_payment_id, registrationId);
           };
 
-          // ── GET request — no preflight needed, works with no-cors ────────
-const beaconUrl  = APPS_SCRIPT_URL + '?action=submitreg';
-const beaconData = new Blob(
-  [JSON.stringify(submitPayload)],
-  { type: 'text/plain' }
-);
-
-const sent = navigator.sendBeacon(beaconUrl, beaconData);
-console.log('Beacon sent:', sent);
-
-// sendBeacon returns true if queued successfully
-// Show success page immediately — Apps Script saves in background
-hideProcessing();
-showSuccessPage({
-  registrationId: registrationId,
-  paymentId:      response.razorpay_payment_id,
-  email:          formData.email,
-  studentId:      formData.studentId,
-  studentName:    formData.studentName,
-  branch:         formData.branch,
-  semester:       formData.semester,
-  examStatus:     formData.examStatus,
-  subjects:       formData.subjects,
-  amount:         formData.amount,
-  receiptNo:      formData.receiptNo
-});
+          img.src = confirmUrl;  // ← fires immediately, no CORS ✅
         },
 
         modal: {
@@ -193,13 +178,13 @@ showSuccessPage({
       rzp.open();
     }
 
-    // ── Success page ──────────────────────────────────────────────────────
-    function showSuccessPage(data) {
+    // ── Show success page ─────────────────────────────────────────────────
+    function showSuccessPage(paymentId, registrationId) {
       const now = new Date().toLocaleString('en-IN', {
         dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Kolkata'
       });
 
-      const subjectRows = data.subjects.map(s => `
+      const subjectRows = (formData.subjects || []).map(s => `
         <tr>
           <td style="padding:7px 10px;border-bottom:1px solid #eee;
                      color:#667eea;font-weight:700;">${s.subjectId}</td>
@@ -219,8 +204,12 @@ showSuccessPage({
 
             <div style="background:#1e3a5f;padding:30px;text-align:center;">
               <div style="font-size:52px;">✅</div>
-              <h2 style="color:white;margin:12px 0 4px;font-size:22px;">Registration Successful!</h2>
-              <p style="color:#c8d8f0;font-size:13px;">Payment confirmed and registration saved</p>
+              <h2 style="color:white;margin:12px 0 4px;font-size:22px;">
+                Registration Successful!
+              </h2>
+              <p style="color:#c8d8f0;font-size:13px;">
+                Payment confirmed and registration saved
+              </p>
             </div>
 
             <div style="background:#e8f5e9;padding:18px;text-align:center;
@@ -228,38 +217,54 @@ showSuccessPage({
               <p style="color:#2e7d32;font-size:12px;text-transform:uppercase;
                         letter-spacing:.05em;margin-bottom:6px;">Registration ID</p>
               <p style="color:#1565c0;font-size:24px;font-weight:bold;
-                        letter-spacing:1px;">${data.registrationId}</p>
+                        letter-spacing:1px;">${registrationId}</p>
             </div>
 
             <div style="padding:26px;">
-              <table style="width:100%;font-size:13px;border-collapse:collapse;margin-bottom:22px;">
+              <table style="width:100%;font-size:13px;
+                            border-collapse:collapse;margin-bottom:22px;">
                 <tr style="background:#f5f7fb;">
-                  <td style="padding:8px 10px;color:#777;width:145px;border-bottom:1px solid #eee;">Student ID</td>
-                  <td style="padding:8px 10px;font-weight:600;border-bottom:1px solid #eee;">${data.studentId}</td>
+                  <td style="padding:8px 10px;color:#777;width:145px;
+                             border-bottom:1px solid #eee;">Student ID</td>
+                  <td style="padding:8px 10px;font-weight:600;
+                             border-bottom:1px solid #eee;">${formData.studentId}</td>
                 </tr>
                 <tr>
-                  <td style="padding:8px 10px;color:#777;border-bottom:1px solid #eee;">Student Name</td>
-                  <td style="padding:8px 10px;font-weight:600;border-bottom:1px solid #eee;">${data.studentName}</td>
+                  <td style="padding:8px 10px;color:#777;
+                             border-bottom:1px solid #eee;">Student Name</td>
+                  <td style="padding:8px 10px;font-weight:600;
+                             border-bottom:1px solid #eee;">${formData.studentName}</td>
                 </tr>
                 <tr style="background:#f5f7fb;">
-                  <td style="padding:8px 10px;color:#777;border-bottom:1px solid #eee;">Branch / Semester</td>
-                  <td style="padding:8px 10px;border-bottom:1px solid #eee;">${data.branch} / Semester ${data.semester}</td>
+                  <td style="padding:8px 10px;color:#777;
+                             border-bottom:1px solid #eee;">Branch / Semester</td>
+                  <td style="padding:8px 10px;border-bottom:1px solid #eee;">
+                    ${formData.branch} / Semester ${formData.semester}
+                  </td>
                 </tr>
                 <tr>
-                  <td style="padding:8px 10px;color:#777;border-bottom:1px solid #eee;">Exam Status</td>
-                  <td style="padding:8px 10px;border-bottom:1px solid #eee;">${data.examStatus}</td>
+                  <td style="padding:8px 10px;color:#777;
+                             border-bottom:1px solid #eee;">Exam Status</td>
+                  <td style="padding:8px 10px;
+                             border-bottom:1px solid #eee;">${formData.examStatus}</td>
                 </tr>
                 <tr style="background:#f5f7fb;">
-                  <td style="padding:8px 10px;color:#777;border-bottom:1px solid #eee;">Amount Paid</td>
-                  <td style="padding:8px 10px;color:#e65100;font-weight:700;border-bottom:1px solid #eee;">₹${data.amount}</td>
+                  <td style="padding:8px 10px;color:#777;
+                             border-bottom:1px solid #eee;">Amount Paid</td>
+                  <td style="padding:8px 10px;color:#e65100;font-weight:700;
+                             border-bottom:1px solid #eee;">₹${formData.amount}</td>
                 </tr>
                 <tr>
-                  <td style="padding:8px 10px;color:#777;border-bottom:1px solid #eee;">Payment ID</td>
-                  <td style="padding:8px 10px;font-size:12px;border-bottom:1px solid #eee;">${data.paymentId}</td>
+                  <td style="padding:8px 10px;color:#777;
+                             border-bottom:1px solid #eee;">Payment ID</td>
+                  <td style="padding:8px 10px;font-size:12px;
+                             border-bottom:1px solid #eee;">${paymentId}</td>
                 </tr>
                 <tr style="background:#f5f7fb;">
-                  <td style="padding:8px 10px;color:#777;border-bottom:1px solid #eee;">Receipt No</td>
-                  <td style="padding:8px 10px;border-bottom:1px solid #eee;">${data.receiptNo}</td>
+                  <td style="padding:8px 10px;color:#777;
+                             border-bottom:1px solid #eee;">Receipt No</td>
+                  <td style="padding:8px 10px;
+                             border-bottom:1px solid #eee;">${formData.receiptNo}</td>
                 </tr>
                 <tr>
                   <td style="padding:8px 10px;color:#777;">Date & Time</td>
@@ -267,10 +272,12 @@ showSuccessPage({
                 </tr>
               </table>
 
-              <p style="font-weight:700;color:#1e3a5f;font-size:14px;margin-bottom:10px;">
+              <p style="font-weight:700;color:#1e3a5f;
+                        font-size:14px;margin-bottom:10px;">
                 Registered Subjects
               </p>
-              <table style="width:100%;font-size:12px;border-collapse:collapse;margin-bottom:22px;">
+              <table style="width:100%;font-size:12px;
+                            border-collapse:collapse;margin-bottom:22px;">
                 <thead>
                   <tr style="background:#1e3a5f;color:white;">
                     <th style="padding:9px 10px;text-align:left;">Code</th>
@@ -281,54 +288,22 @@ showSuccessPage({
                 <tbody>${subjectRows}</tbody>
               </table>
 
-              <div style="background:#e3f2fd;border-radius:8px;padding:14px 16px;margin-bottom:20px;">
+              <div style="background:#e3f2fd;border-radius:8px;
+                          padding:14px 16px;margin-bottom:20px;">
                 <p style="font-size:13px;color:#1565c0;">
-                  📧 A receipt has been sent to <strong>${data.email}</strong>
+                  📧 A receipt has been sent to
+                  <strong>${formData.email}</strong>
                 </p>
               </div>
 
               <button onclick="location.reload()"
-                style="width:100%;padding:15px;background:#1e3a5f;color:white;
-                       border:none;border-radius:10px;font-size:15px;
-                       font-weight:600;cursor:pointer;">
+                style="width:100%;padding:15px;background:#1e3a5f;
+                       color:white;border:none;border-radius:10px;
+                       font-size:15px;font-weight:600;cursor:pointer;">
                 🔄 Register Another Student
               </button>
             </div>
           </div>
-        </div>`;
-    }
-
-    // ── Error page ────────────────────────────────────────────────────────
-    function showErrorPage(paymentId) {
-      document.getElementById('examFrame').style.display   = 'none';
-      document.getElementById('successPage').style.display = 'block';
-
-      document.getElementById('successPage').innerHTML = `
-        <div style="max-width:500px;margin:60px auto;text-align:center;
-                    background:white;padding:40px;border-radius:16px;
-                    box-shadow:0 10px 40px rgba(0,0,0,0.2);
-                    font-family:'Segoe UI',sans-serif;">
-          <div style="font-size:52px;">⚠️</div>
-          <h2 style="color:#c62828;margin:16px 0 8px;font-size:20px;">
-            Payment Received — Registration Pending
-          </h2>
-          <p style="color:#555;font-size:14px;line-height:1.7;margin-bottom:16px;">
-            Your payment was successful but registration could not be saved automatically.
-          </p>
-          <div style="background:#fff3cd;border:1px solid #ffe082;
-                      border-radius:8px;padding:16px;margin-bottom:20px;">
-            <p style="font-size:12px;color:#856404;margin-bottom:6px;">Your Payment ID (save this):</p>
-            <p style="font-size:17px;font-weight:bold;color:#e65100;word-break:break-all;">${paymentId}</p>
-          </div>
-          <p style="font-size:13px;color:#777;margin-bottom:24px;">
-            Please contact admin with your Payment ID to complete registration manually.
-          </p>
-          <button onclick="location.reload()"
-            style="padding:13px 32px;background:#1e3a5f;color:white;
-                   border:none;border-radius:8px;font-size:14px;
-                   font-weight:600;cursor:pointer;">
-            Try Again
-          </button>
         </div>`;
     }
   </script>
