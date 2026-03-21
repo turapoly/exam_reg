@@ -27,6 +27,7 @@
     }
     #loadingScreen p { font-family: 'Segoe UI', sans-serif; font-size: 15px; opacity: 0.9; }
     @keyframes spin { to { transform: rotate(360deg); } }
+
     #processingOverlay {
       display: none;
       position: fixed; inset: 0; z-index: 9999;
@@ -45,7 +46,9 @@
     }
     #processingOverlay p     { font-size: 18px; font-weight: 600; }
     #processingOverlay small { font-size: 13px; opacity: 0.8; margin-top: 8px; }
+
     iframe { width: 100%; height: 100vh; border: none; display: block; }
+
     #successPage {
       display: none;
       background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -63,13 +66,13 @@
 
   <div id="processingOverlay">
     <div class="spinner"></div>
-    <p id="processingMsg">Processing payment…</p>
+    <p id="processingMsg">Completing registration…</p>
     <small>Please do not close this window</small>
   </div>
 
   <iframe
     id="examFrame"
-    src="https://script.google.com/macros/s/AKfycbzlaW4G8GLxnI9fXN1MQfyJIk5tKr3oApSV_KCO9YwtKiqErX6OuVv8GBy9uxp1Pr9T/exec?page=er"
+    src="https://script.google.com/macros/s/AKfycbzWvuSaFkXAEY8ytHZZ_K4QgDXs8onDgz999u43yClKrqsBbNPzEgP9F3j8MQaILFGg/exec?page=er"
     scrolling="yes"
     allow="payment *"
     onload="document.getElementById('loadingScreen').style.display='none'">
@@ -79,9 +82,7 @@
 
   <script>
     let formData = null;
-
-    // ── Your Apps Script deployment URL (no ?page= here) ──────────────────
-    const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzlaW4G8GLxnI9fXN1MQfyJIk5tKr3oApSV_KCO9YwtKiqErX6OuVv8GBy9uxp1Pr9T/exec?page=er';
+    const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzWvuSaFkXAEY8ytHZZ_K4QgDXs8onDgz999u43yClKrqsBbNPzEgP9F3j8MQaILFGg/exec?page=er';
 
     function showProcessing(msg) {
       document.getElementById('processingMsg').textContent = msg;
@@ -92,15 +93,34 @@
       document.getElementById('processingOverlay').classList.remove('show');
     }
 
-    // ── Listen for OPEN_RAZORPAY from iframe ──────────────────────────────
+    // ── Listen for messages from iframe ────────────────────────────────────
     window.addEventListener('message', function(event) {
       console.log('Origin:', event.origin, '| Type:', event.data?.type);
       const msg = event.data;
       if (!msg || !msg.type) return;
+
+      // ── Razorpay payment request ───────────────────────────────────────
       if (msg.type === 'OPEN_RAZORPAY') {
         formData = msg.payload;
         console.log('✅ Stored form data:', formData);
         launchRazorpay(msg.payload);
+      }
+
+      // ── Registration confirmed via iframe google.script.run ────────────
+      if (msg.type === 'CONFIRM_SUCCESS') {
+        hideProcessing();
+        showSuccessPage(msg.payload.paymentId, msg.payload.registrationId);
+      }
+
+      // ── Registration failed ────────────────────────────────────────────
+      if (msg.type === 'CONFIRM_FAILED') {
+        hideProcessing();
+        showErrorPage(msg.payload.paymentId);
+      }
+
+      // ── Payment cancelled ──────────────────────────────────────────────
+      if (msg.type === 'PAYMENT_CANCELLED') {
+        console.log('Payment cancelled');
       }
     });
 
@@ -133,40 +153,35 @@
 
           const registrationId = 'REG' + Date.now();
 
-          // ── Image trick — fires GET with no CORS restriction ─────────────
-          // pendingId was saved BEFORE payment via google.script.run
-          // Only tiny IDs sent here — full data already in pending_registrations
-          const confirmUrl = APPS_SCRIPT_URL
-            + '?action=confirmreg'
+          // ── Reload iframe with payment params ──────────────────────────
+          // iframe calls er_confirmRegistration via google.script.run
+          // This completely bypasses CORS — runs inside script.google.com ✅
+          const newSrc = APPS_SCRIPT_URL
+            + '?page=er'
+            + '&confirmreg=1'
             + '&pendingId='      + encodeURIComponent(formData.pendingId)
             + '&paymentId='      + encodeURIComponent(response.razorpay_payment_id)
             + '&registrationId=' + encodeURIComponent(registrationId)
-            + '&receiptNo='      + encodeURIComponent(formData.receiptNo);
+            + '&receiptNo='      + encodeURIComponent(formData.receiptNo)
+            + '&email='          + encodeURIComponent(formData.email)
+            + '&studentId='      + encodeURIComponent(formData.studentId)
+            + '&studentName='    + encodeURIComponent(formData.studentName)
+            + '&branch='         + encodeURIComponent(formData.branch)
+            + '&semester='       + encodeURIComponent(formData.semester)
+            + '&examStatus='     + encodeURIComponent(formData.examStatus)
+            + '&amount='         + encodeURIComponent(formData.amount);
 
-          console.log('Firing confirmreg:', confirmUrl);
-
-          const img = new Image();
-
-          // Both onload and onerror mean request was sent ✅
-          // Apps Script always returns redirect — onerror fires but data is saved
-          img.onload = function() {
-            console.log('✅ confirmreg onload fired');
-            hideProcessing();
-            showSuccessPage(response.razorpay_payment_id, registrationId);
-          };
-          img.onerror = function() {
-            // This is NORMAL for cross-origin — request still reached Apps Script ✅
-            console.log('✅ confirmreg onerror fired (normal — data still saved)');
-            hideProcessing();
-            showSuccessPage(response.razorpay_payment_id, registrationId);
-          };
-
-          img.src = confirmUrl;  // ← fires immediately, no CORS ✅
+          console.log('Reloading iframe with confirmreg params');
+          document.getElementById('examFrame').src = newSrc;
         },
 
         modal: {
           ondismiss: function() {
             console.log('Payment cancelled by user');
+            const iframe = document.getElementById('examFrame');
+            try {
+              iframe.contentWindow.postMessage({ type: 'PAYMENT_CANCELLED' }, '*');
+            } catch(e) {}
           }
         }
       };
@@ -174,11 +189,17 @@
       const rzp = new Razorpay(options);
       rzp.on('payment.failed', function(r) {
         console.log('Payment failed:', r.error.description);
+        try {
+          document.getElementById('examFrame').contentWindow.postMessage({
+            type: 'PAYMENT_FAILED',
+            payload: { description: r.error.description }
+          }, '*');
+        } catch(e) {}
       });
       rzp.open();
     }
 
-    // ── Show success page ─────────────────────────────────────────────────
+    // ── Show success page ──────────────────────────────────────────────────
     function showSuccessPage(paymentId, registrationId) {
       const now = new Date().toLocaleString('en-IN', {
         dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Kolkata'
@@ -304,6 +325,45 @@
               </button>
             </div>
           </div>
+        </div>`;
+    }
+
+    // ── Show error page ────────────────────────────────────────────────────
+    function showErrorPage(paymentId) {
+      document.getElementById('examFrame').style.display   = 'none';
+      document.getElementById('successPage').style.display = 'block';
+
+      document.getElementById('successPage').innerHTML = `
+        <div style="max-width:500px;margin:60px auto;text-align:center;
+                    background:white;padding:40px;border-radius:16px;
+                    box-shadow:0 10px 40px rgba(0,0,0,0.2);
+                    font-family:'Segoe UI',sans-serif;">
+          <div style="font-size:52px;">⚠️</div>
+          <h2 style="color:#c62828;margin:16px 0 8px;font-size:20px;">
+            Payment Received — Registration Pending
+          </h2>
+          <p style="color:#555;font-size:14px;line-height:1.7;margin-bottom:16px;">
+            Your payment was successful but registration
+            could not be saved automatically.
+          </p>
+          <div style="background:#fff3cd;border:1px solid #ffe082;
+                      border-radius:8px;padding:16px;margin-bottom:20px;">
+            <p style="font-size:12px;color:#856404;margin-bottom:6px;">
+              Your Payment ID (save this):
+            </p>
+            <p style="font-size:17px;font-weight:bold;
+                      color:#e65100;word-break:break-all;">${paymentId}</p>
+          </div>
+          <p style="font-size:13px;color:#777;margin-bottom:24px;">
+            Please contact admin with your Payment ID
+            to complete registration manually.
+          </p>
+          <button onclick="location.reload()"
+            style="padding:13px 32px;background:#1e3a5f;color:white;
+                   border:none;border-radius:8px;font-size:14px;
+                   font-weight:600;cursor:pointer;">
+            Try Again
+          </button>
         </div>`;
     }
   </script>
