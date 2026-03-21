@@ -42,17 +42,32 @@
   </iframe>
 
   <script>
-    // ── Debug: log all messages ────────────────────────────────────────────
     window.addEventListener('message', function(event) {
       console.log('Message from:', event.origin, '| Type:', event.data?.type);
 
-      if (!event.origin.includes('script.google.com')) return;
+      // Apps Script iframes can come from multiple Google origins
+      const allowedOrigins = [
+        'script.google.com',
+        'googleusercontent.com',
+        'content.com'
+      ];
+
+      const isAllowed = allowedOrigins.some(o => event.origin.includes(o));
+      if (!isAllowed) {
+        console.log('Rejected origin:', event.origin);
+        return;
+      }
+
       const msg = event.data;
+      if (!msg || !msg.type) return;
+
+      console.log('✅ Accepted:', msg.type);
+
       if (msg.type === 'OPEN_RAZORPAY') launchRazorpay(msg.payload);
     });
 
     function launchRazorpay(payload) {
-      console.log('launchRazorpay called with:', payload); // ← debug
+      console.log('🚀 Launching Razorpay:', payload);
       const options = {
         key:         'rzp_live_ST8o92Q6AKbaEP',
         amount:      payload.amount * 100,
@@ -74,7 +89,7 @@
         theme:   { color: '#667eea' },
 
         handler: function(response) {
-          console.log('Payment success:', response); // ← debug
+          console.log('✅ Payment success:', response);
           document.getElementById('examFrame').contentWindow.postMessage({
             type: 'PAYMENT_SUCCESS', payload: response
           }, '*');
@@ -100,7 +115,3 @@
   </script>
 </body>
 </html>
-
-
-
-
